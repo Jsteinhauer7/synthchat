@@ -2,6 +2,8 @@
 
 A real-time chat application built with Flask-SocketIO and WebSockets, featuring a synthwave aesthetic — perspective grid background, retro sun, neon pink and orange accents.
 
+🔗 **[Live Demo](https://synthchat.onrender.com)**
+
 ## Features
 
 - **Real-time messaging** — messages appear instantly via WebSockets, no page refresh
