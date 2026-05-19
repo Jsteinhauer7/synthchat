@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SynthChat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #0a0015;
+            color: #ffe0f0;
+            font-family: 'Exo 2', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Synthwave grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 50vh;
+            background:
+                linear-gradient(rgba(255,45,120,0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,45,120,0.15) 1px, transparent 1px);
+            background-size: 60px 60px;
+            transform: perspective(300px) rotateX(60deg);
+            transform-origin: bottom;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Horizon glow */
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: 48vh; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #ff2d78, #ff6b00, #ff2d78, transparent);
+            box-shadow: 0 0 30px 8px rgba(255,45,120,0.4);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* JOIN SCREEN */
+        #join-screen {
+            position: relative; z-index: 10;
+            display: flex; align-items: center; justify-content: center;
+            height: 100vh; padding: 20px;
+        }
+
+        .join-card {
+            background: rgba(10,0,21,0.92);
+            border: 1px solid #ff2d78;
+            border-radius: 4px;
+            padding: 40px;
+            width: 100%; max-width: 420px;
+            box-shadow: 0 0 40px rgba(255,45,120,0.3), inset 0 0 40px rgba(255,45,120,0.03);
+            position: relative;
+        }
+
+        /* Synthwave sun */
+        .sun-wrapper {
+            display: flex; justify-content: center; margin-bottom: 24px;
+        }
+        .sun {
+            width: 90px; height: 45px;
+            background: linear-gradient(180deg, #ff6b00 0%, #ff2d78 100%);
+            border-radius: 90px 90px 0 0;
+            box-shadow: 0 0 40px rgba(255,107,0,0.7), 0 0 80px rgba(255,45,120,0.4);
+            position: relative; overflow: hidden;
+        }
+        .sun-lines {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            display: flex; flex-direction: column; gap: 5px;
+            padding: 4px 0;
+        }
+        .sun-line {
+            height: 2px;
+            background: rgba(10,0,21,0.6);
+        }
+
+        .join-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.6rem; font-weight: 900;
+            text-align: center; margin-bottom: 6px;
+            background: linear-gradient(135deg, #ff6b00, #ff2d78);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-shadow: none;
+            letter-spacing: 0.1em;
+        }
+        .join-sub {
+            text-align: center; color: rgba(255,224,240,0.4);
+            font-size: 0.82rem; margin-bottom: 28px; letter-spacing: 0.05em;
+        }
+
+        .synth-input {
+            width: 100%; background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,45,120,0.35);
+            color: #ffe0f0; border-radius: 4px;
+            padding: 12px 16px; font-family: 'Exo 2', sans-serif;
+            font-size: 0.9rem; outline: none; margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .synth-input::placeholder { color: rgba(255,224,240,0.3); }
+        .synth-input:focus {
+            border-color: #ff2d78;
+            box-shadow: 0 0 15px rgba(255,45,120,0.25);
+        }
+        .synth-select option { background: #0a0015; }
+
+        .btn-join {
+            width: 100%; background: linear-gradient(135deg, #ff6b00, #ff2d78);
+            border: none; border-radius: 4px; color: #fff;
+            font-family: 'Orbitron', monospace; font-size: 0.85rem;
+            font-weight: 700; padding: 14px; cursor: pointer;
+            letter-spacing: 0.15em; text-transform: uppercase;
+            transition: all 0.2s;
+            box-shadow: 0 0 20px rgba(255,45,120,0.3);
+        }
+        .btn-join:hover { box-shadow: 0 0 40px rgba(255,45,120,0.6); transform: translateY(-1px); }
+
+        /* CHAT SCREEN */
+        #chat-screen { display: none; position: relative; z-index: 10; height: 100vh; }
+        .chat-layout { display: flex; height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 210px; min-width: 210px;
+            background: rgba(10,0,21,0.95);
+            border-right: 1px solid rgba(255,45,120,0.3);
+            display: flex; flex-direction: column; padding: 16px;
+        }
+        .sidebar-logo {
+            font-family: 'Orbitron', monospace;
+            font-size: 1rem; font-weight: 900;
+            background: linear-gradient(135deg, #ff6b00, #ff2d78);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            letter-spacing: 0.1em; margin-bottom: 24px;
+        }
+        .sidebar-label {
+            font-size: 0.65rem; text-transform: uppercase;
+            letter-spacing: 0.15em; color: rgba(255,45,120,0.6);
+            margin-bottom: 8px; font-family: 'Orbitron', monospace;
+        }
+        .room-btn {
+            display: block; width: 100%; text-align: left;
+            background: transparent; border: 1px solid transparent;
+            color: rgba(255,224,240,0.4); padding: 8px 12px; border-radius: 4px;
+            font-family: 'Exo 2', sans-serif; font-size: 0.85rem;
+            cursor: pointer; transition: all 0.15s; margin-bottom: 4px;
+            letter-spacing: 0.03em;
+        }
+        .room-btn::before { content: '// '; color: rgba(255,45,120,0.4); }
+        .room-btn:hover { color: #ffe0f0; border-color: rgba(255,45,120,0.3); background: rgba(255,45,120,0.06); }
+        .room-btn.active {
+            color: #ff2d78; border-color: rgba(255,45,120,0.5);
+            background: rgba(255,45,120,0.1);
+            box-shadow: 0 0 10px rgba(255,45,120,0.15);
+        }
+
+        .online-section { margin-top: auto; border-top: 1px solid rgba(255,45,120,0.15); padding-top: 14px; }
+        .online-user {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.8rem; color: rgba(255,224,240,0.5);
+            padding: 4px 0;
+        }
+        .online-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #ff2d78;
+            box-shadow: 0 0 6px rgba(255,45,120,0.8);
+            flex-shrink: 0;
+        }
+
+        /* Main */
+        .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: rgba(10,0,21,0.85); }
+
+        .chat-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(255,45,120,0.2);
+            display: flex; align-items: center; gap: 12px;
+            background: rgba(10,0,21,0.9);
+        }
+        .chat-header h5 {
+            margin: 0; font-family: 'Orbitron', monospace;
+            font-size: 0.9rem; font-weight: 700; color: #ff2d78;
+            letter-spacing: 0.1em;
+        }
+        .chat-header span { color: rgba(255,224,240,0.3); font-size: 0.78rem; }
+
+        .messages {
+            flex: 1; overflow-y: auto; padding: 16px 20px;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .messages::-webkit-scrollbar { width: 3px; }
+        .messages::-webkit-scrollbar-thumb { background: rgba(255,45,120,0.3); }
+
+        .msg { display: flex; flex-direction: column; max-width: 72%; }
+        .msg.own { align-self: flex-end; align-items: flex-end; }
+        .msg.other { align-self: flex-start; }
+        .msg.system { align-self: center; }
+
+        .msg-meta { font-size: 0.7rem; color: rgba(255,224,240,0.35); margin-bottom: 4px; padding: 0 4px; letter-spacing: 0.03em; }
+        .msg.own .msg-meta { color: rgba(255,107,0,0.7); }
+
+        .msg-bubble {
+            padding: 10px 14px; font-size: 0.88rem; line-height: 1.5;
+            word-break: break-word; border-radius: 4px;
+        }
+        .msg.own .msg-bubble {
+            background: rgba(255,107,0,0.12);
+            border: 1px solid rgba(255,107,0,0.4);
+            color: #ffe0c0;
+            box-shadow: 0 0 15px rgba(255,107,0,0.1);
+        }
+        .msg.other .msg-bubble {
+            background: rgba(255,45,120,0.08);
+            border: 1px solid rgba(255,45,120,0.25);
+            color: #ffe0f0;
+        }
+        .msg.system .msg-bubble {
+            background: transparent; border: none;
+            color: rgba(255,45,120,0.45); font-size: 0.75rem;
+            font-style: italic; padding: 2px 0;
+        }
+
+        .typing-indicator {
+            padding: 0 20px 6px; font-size: 0.75rem;
+            color: rgba(255,45,120,0.5); min-height: 22px;
+            letter-spacing: 0.03em;
+        }
+
+        .input-area {
+            padding: 12px 16px;
+            border-top: 1px solid rgba(255,45,120,0.2);
+            display: flex; gap: 10px;
+            background: rgba(10,0,21,0.95);
+        }
+        .input-area input {
+            flex: 1; background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,45,120,0.25); border-radius: 4px;
+            color: #ffe0f0; padding: 11px 16px;
+            font-family: 'Exo 2', sans-serif; font-size: 0.88rem; outline: none;
+            transition: all 0.2s;
+        }
+        .input-area input::placeholder { color: rgba(255,224,240,0.25); }
+        .input-area input:focus {
+            border-color: #ff2d78;
+            box-shadow: 0 0 12px rgba(255,45,120,0.2);
+        }
+        .btn-send {
+            background: linear-gradient(135deg, #ff6b00, #ff2d78);
+            border: none; border-radius: 4px; color: #fff;
+            padding: 0 18px; font-size: 1rem; cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 0 15px rgba(255,45,120,0.3);
+        }
+        .btn-send:hover { box-shadow: 0 0 25px rgba(255,45,120,0.6); }
+    </style>
+</head>
+<body>
+
+<!-- Join Screen -->
+<div id="join-screen">
+    <div class="join-card">
+        <div class="sun-wrapper">
+            <div class="sun">
+                <div class="sun-lines">
+                    <div class="sun-line"></div>
+                    <div class="sun-line"></div>
+                    <div class="sun-line"></div>
+                    <div class="sun-line"></div>
+                    <div class="sun-line"></div>
+                </div>
+            </div>
+        </div>
+        <div class="join-title">SYNTHCHAT</div>
+        <div class="join-sub">REAL-TIME TRANSMISSION SYSTEM</div>
+        <input type="text" class="synth-input" id="username-input" placeholder="ENTER CALLSIGN..." maxlength="20">
+        <select class="synth-input synth-select" id="room-select">
+            {% for room in rooms %}
+            <option value="{{ room }}">//  {{ room }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn-join" id="btn-join">CONNECT ›</button>
+    </div>
+</div>
+
+<!-- Chat Screen -->
+<div id="chat-screen">
+    <div class="chat-layout">
+        <div class="sidebar">
+            <div class="sidebar-logo">SYNTHCHAT</div>
+            <div class="sidebar-label">Channels</div>
+            {% for room in rooms %}
+            <button class="room-btn" data-room="{{ room }}" id="room-{{ room }}">{{ room }}</button>
+            {% endfor %}
+            <div class="online-section">
+                <div class="sidebar-label" style="margin-bottom:10px;">Online</div>
+                <div id="user-list"></div>
+            </div>
+        </div>
+        <div class="chat-main">
+            <div class="chat-header">
+                <h5 id="room-title">// GENERAL</h5>
+                <span id="online-count">0 online</span>
+            </div>
+            <div class="messages" id="messages"></div>
+            <div class="typing-indicator" id="typing-indicator"></div>
+            <div class="input-area">
+                <input type="text" id="msg-input" placeholder="Transmit message...">
+                <button class="btn-send" id="btn-send">➤</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let myUsername = '';
+    let currentRoom = '';
+    let typingTimeout = null;
+
+    document.getElementById('btn-join').addEventListener('click', joinChat);
+    document.getElementById('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') joinChat(); });
+
+    function joinChat() {
+        const username = document.getElementById('username-input').value.trim().toUpperCase();
+        const room = document.getElementById('room-select').value;
+        if (!username) { document.getElementById('username-input').focus(); return; }
+        myUsername = username;
+        currentRoom = room;
+        socket.emit('join', { username, room });
+        document.getElementById('join-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'block';
+        setActiveRoom(room);
+        document.getElementById('msg-input').focus();
+    }
+
+    document.getElementById('btn-send').addEventListener('click', sendMessage);
+    document.getElementById('msg-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+    document.getElementById('msg-input').addEventListener('input', () => {
+        socket.emit('typing', { typing: true });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => socket.emit('typing', { typing: false }), 1500);
+    });
+
+    function sendMessage() {
+        const input = document.getElementById('msg-input');
+        const text = input.value.trim();
+        if (!text) return;
+        socket.emit('message', { text });
+        input.value = '';
+        socket.emit('typing', { typing: false });
+    }
+
+    document.querySelectorAll('.room-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const room = btn.dataset.room;
+            if (room === currentRoom) return;
+            currentRoom = room;
+            socket.emit('switch_room', { room });
+            setActiveRoom(room);
+            document.getElementById('messages').innerHTML = '';
+        });
+    });
+
+    function setActiveRoom(room) {
+        document.querySelectorAll('.room-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById(`room-${room}`);
+        if (btn) btn.classList.add('active');
+        document.getElementById('room-title').textContent = `// ${room.toUpperCase()}`;
+    }
+
+    socket.on('history', (messages) => {
+        const container = document.getElementById('messages');
+        container.innerHTML = '';
+        messages.forEach(m => appendMessage(m.username, m.text, m.timestamp, false));
+        container.scrollTop = container.scrollHeight;
+    });
+
+    socket.on('message', (data) => {
+        appendMessage(data.username, data.text, data.timestamp, data.username === myUsername);
+    });
+
+    socket.on('system', (data) => {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'msg system';
+        div.innerHTML = `<div class="msg-bubble">— ${data.text} —</div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    });
+
+    socket.on('user_list', (users) => {
+        document.getElementById('user-list').innerHTML = users.map(u =>
+            `<div class="online-user"><div class="online-dot"></div>${u}</div>`
+        ).join('');
+        document.getElementById('online-count').textContent = `${users.length} online`;
+    });
+
+    socket.on('typing', (data) => {
+        const el = document.getElementById('typing-indicator');
+        el.textContent = data.typing ? `${data.username} IS TRANSMITTING...` : '';
+    });
+
+    socket.on('room_changed', (data) => { currentRoom = data.room; });
+
+    function appendMessage(username, text, timestamp, isOwn) {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = `msg ${isOwn ? 'own' : 'other'}`;
+        div.innerHTML = `
+            <div class="msg-meta">${isOwn ? 'YOU' : username}  ·  ${timestamp}</div>
+            <div class="msg-bubble">${escapeHtml(text)}</div>
+        `;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(t) {
+        return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+</script>
+</body>
+</html>
